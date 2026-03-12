@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import math
 import time
-from pathlib import Path
+from urllib.parse import quote
 
 import numpy as np
 import pandas as pd
@@ -140,49 +140,50 @@ def kpi_panel() -> None:
     st.markdown('<div class="kpi-card"><p class="kpi-title">Active Alerts</p><p class="kpi-value alert-value">2 (Minor)</p></div>', unsafe_allow_html=True)
 
 
-def image_mapping_ui(image_files: list[Path]) -> dict[str, Path | None]:
-    mapping: dict[str, Path | None] = {
-        "Unified Command": None,
-        "Grid Balancing": None,
-        "Unlinked Relay": None,
-        "V2I Greenwave": None,
-    }
-    if not image_files:
-        return mapping
-
-    defaults = image_files[:4]
-    names = [path.name for path in image_files]
-    default_names = [path.name for path in defaults]
-
-    st.sidebar.subheader("Reference Mapping")
-    for idx, key in enumerate(mapping):
-        default_index = min(idx, len(default_names) - 1)
-        selected_name = st.sidebar.selectbox(
-            f"{key} reference",
-            options=names,
-            index=default_index,
-            key=f"ref_{idx}",
-        )
-        mapping[key] = next((p for p in image_files if p.name == selected_name), None)
-
-    return mapping
+def bus_icon_url(color_hex: str) -> str:
+    svg = f"""
+    <svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 160 90'>
+      <defs>
+        <filter id='g' x='-60%' y='-60%' width='220%' height='220%'>
+          <feGaussianBlur stdDeviation='3' result='b'/>
+          <feMerge>
+            <feMergeNode in='b'/>
+            <feMergeNode in='SourceGraphic'/>
+          </feMerge>
+        </filter>
+      </defs>
+      <rect x='18' y='22' rx='9' ry='9' width='124' height='42' fill='none' stroke='{color_hex}' stroke-width='4' filter='url(#g)'/>
+      <rect x='32' y='30' width='26' height='12' fill='none' stroke='{color_hex}' stroke-width='2'/>
+      <rect x='62' y='30' width='26' height='12' fill='none' stroke='{color_hex}' stroke-width='2'/>
+      <rect x='92' y='30' width='26' height='12' fill='none' stroke='{color_hex}' stroke-width='2'/>
+      <rect x='122' y='30' width='12' height='24' fill='none' stroke='{color_hex}' stroke-width='2'/>
+      <circle cx='48' cy='69' r='8' fill='none' stroke='{color_hex}' stroke-width='3'/>
+      <circle cx='110' cy='69' r='8' fill='none' stroke='{color_hex}' stroke-width='3'/>
+    </svg>
+    """.strip()
+    return "data:image/svg+xml;utf8," + quote(svg)
 
 
-def show_reference(path: Path | None, caption: str) -> None:
-    if path and path.exists():
-        st.image(str(path), caption=caption, use_container_width=True)
+def with_bus_icons(df: pd.DataFrame, color_hex_col: str = "color_hex") -> pd.DataFrame:
+    icon_df = df.copy()
+    icon_df["icon"] = icon_df[color_hex_col].map(
+        lambda color: {
+            "url": bus_icon_url(str(color)),
+            "width": 160,
+            "height": 90,
+            "anchorY": 45,
+        }
+    )
+    icon_df["icon_size"] = 7
+    return icon_df
 
 
-def unified_command_page(reference_image: Path | None) -> None:
+def unified_command_page() -> None:
     st.markdown('<div class="main-title">Unified Command Center</div>', unsafe_allow_html=True)
     st.markdown(
         '<div class="page-subtitle">Map-centric command view of Kashmere Gate ISBT with holographic fleet telemetry and live relay state.</div>',
         unsafe_allow_html=True,
     )
-
-    if reference_image:
-        with st.expander("Reference Visual", expanded=False):
-            show_reference(reference_image, "Unified template")
 
     pulse = 0.45 + 0.55 * (math.sin(time.time() * 2.8) + 1.0) / 2.0
     line_alpha = int(160 + pulse * 90)
@@ -199,6 +200,7 @@ def unified_command_page(reference_image: Path | None) -> None:
         ]
     )
     buses["color"] = buses["fleet"].map({"DTC": GREEN_DTC, "Cluster": BLUE_CLUSTER})
+    buses["color_hex"] = buses["fleet"].map({"DTC": "#3fffa9", "Cluster": "#48a3ff"})
     buses["tag"] = (
         "Bus ID: "
         + buses["bus_id"]
@@ -207,6 +209,7 @@ def unified_command_page(reference_image: Path | None) -> None:
         + "%\\nNext Relay: "
         + buses["next_relay"]
     )
+    bus_icons = with_bus_icons(buses)
 
     handover_line = pd.DataFrame(
         [
@@ -237,19 +240,17 @@ def unified_command_page(reference_image: Path | None) -> None:
                 records(buses),
                 get_position="[lon, lat]",
                 get_color="color",
-                get_radius=80,
-                radius_scale=2.8,
+                get_radius=130,
+                radius_scale=1.6,
                 pickable=True,
             ),
             pdk.Layer(
-                "ColumnLayer",
-                records(buses.assign(height=220)),
+                "IconLayer",
+                records(bus_icons),
+                get_icon="icon",
                 get_position="[lon, lat]",
-                get_elevation="height",
-                get_fill_color="color",
-                elevation_scale=1,
-                radius=35,
-                extruded=True,
+                get_size="icon_size",
+                size_scale=6,
                 pickable=True,
             ),
             pdk.Layer(
@@ -296,16 +297,12 @@ def unified_command_page(reference_image: Path | None) -> None:
         kpi_panel()
 
 
-def grid_balancing_page(reference_image: Path | None) -> None:
+def grid_balancing_page() -> None:
     st.markdown('<div class="main-title">Grid Balancing War Room</div>', unsafe_allow_html=True)
     st.markdown(
         '<div class="page-subtitle">Okhla Depot V2G close-up with peak-shaving red streams, thermal risk scoring, and stabilization telemetry.</div>',
         unsafe_allow_html=True,
     )
-
-    if reference_image:
-        with st.expander("Reference Visual", expanded=False):
-            show_reference(reference_image, "Okhla Depot template")
 
     hour = st.sidebar.slider("Peak Shaving Hour", min_value=0, max_value=23, value=16)
     peak_shaving = 15 <= hour <= 19
@@ -323,6 +320,7 @@ def grid_balancing_page(reference_image: Path | None) -> None:
     )
     buses["risk"] = np.where(buses["thermal"] >= 0.85, "High Thermal Risk", "Nominal")
     buses["color"] = buses["risk"].map({"High Thermal Risk": RED_ALERT, "Nominal": GREEN_DTC})
+    buses["color_hex"] = buses["risk"].map({"High Thermal Risk": "#ff4e64", "Nominal": "#3fffa9"})
     buses["tag"] = (
         buses["bus_id"]
         + "\\n"
@@ -331,6 +329,7 @@ def grid_balancing_page(reference_image: Path | None) -> None:
         + buses["v2g_kw"].astype(str)
         + " kW"
     )
+    bus_icons = with_bus_icons(buses)
 
     flows = buses.copy()
     flows["path"] = flows.apply(lambda row: [[row["lon"], row["lat"]], [depot["lon"], depot["lat"]]], axis=1)
@@ -370,11 +369,20 @@ def grid_balancing_page(reference_image: Path | None) -> None:
             pickable=True,
         ),
         pdk.Layer(
+            "IconLayer",
+            records(bus_icons),
+            get_icon="icon",
+            get_position="[lon, lat]",
+            get_size="icon_size",
+            size_scale=6,
+            pickable=True,
+        ),
+        pdk.Layer(
             "ScatterplotLayer",
             records(buses),
             get_position="[lon, lat]",
             get_color="color",
-            get_radius=95,
+            get_radius=90,
             pickable=True,
         ),
         pdk.Layer(
@@ -418,27 +426,25 @@ def grid_balancing_page(reference_image: Path | None) -> None:
     )
 
 
-def unlinked_relay_page(reference_image: Path | None) -> None:
+def unlinked_relay_page() -> None:
     st.markdown('<div class="main-title">Unlinked Relay Operations</div>', unsafe_allow_html=True)
     st.markdown(
         '<div class="page-subtitle">Sarai Kale Khan handover hub with live agent states, relay continuity line, and crew verification telemetry.</div>',
         unsafe_allow_html=True,
     )
 
-    if reference_image:
-        with st.expander("Reference Visual", expanded=False):
-            show_reference(reference_image, "Sarai Kale Khan template")
-
     pulse = 0.3 + 0.7 * (math.sin(time.time() * 2.6) + 1) / 2
     relay_width = 8 + pulse * 10
 
     buses = pd.DataFrame(
         [
-            {"bus_id": "DTC-101E", "role": "Arriving Bus", "lat": 28.5886, "lon": 77.2522, "color": BLUE_CLUSTER},
-            {"bus_id": "DTC-303E", "role": "Departing Bus", "lat": 28.5877, "lon": 77.2541, "color": GREEN_DTC},
+            {"bus_id": "DTC-101E", "role": "Arriving Bus", "lat": 28.5886, "lon": 77.2522, "color": RED_ALERT, "color_hex": "#ff4e64"},
+            {"bus_id": "DTC-303E", "role": "Departing Bus", "lat": 28.5877, "lon": 77.2541, "color": BLUE_CLUSTER, "color_hex": "#48a3ff"},
             {"bus_id": "DTC-550E", "role": "Standby", "lat": 28.5865, "lon": 77.2518, "color": BLUE_CLUSTER},
         ]
     )
+    buses["color_hex"] = buses["color_hex"].fillna("#48a3ff")
+    bus_icons = with_bus_icons(buses)
 
     bus_tags = pd.DataFrame(
         [
@@ -475,11 +481,20 @@ def unlinked_relay_page(reference_image: Path | None) -> None:
     with cols[0]:
         layers = [
             pdk.Layer(
+                "IconLayer",
+                records(bus_icons),
+                get_icon="icon",
+                get_position="[lon, lat]",
+                get_size="icon_size",
+                size_scale=6,
+                pickable=True,
+            ),
+            pdk.Layer(
                 "ScatterplotLayer",
                 records(buses),
                 get_position="[lon, lat]",
                 get_color="color",
-                get_radius=96,
+                get_radius=88,
                 pickable=True,
             ),
             pdk.Layer(
@@ -518,16 +533,12 @@ def unlinked_relay_page(reference_image: Path | None) -> None:
         kpi_panel()
 
 
-def v2i_greenwave_page(reference_image: Path | None) -> None:
+def v2i_greenwave_page() -> None:
     st.markdown('<div class="main-title">V2I Greenwave Priority</div>', unsafe_allow_html=True)
     st.markdown(
         '<div class="page-subtitle">Tilak Marg junction optimization with late-running trigger, signal-level response, and congestion handoff heatmap.</div>',
         unsafe_allow_html=True,
     )
-
-    if reference_image:
-        with st.expander("Reference Visual", expanded=False):
-            show_reference(reference_image, "Tilak Marg template")
 
     pulse = 0.35 + 0.65 * (math.sin(time.time() * 3.1) + 1) / 2
     late_alpha = int(155 + pulse * 90)
@@ -541,9 +552,11 @@ def v2i_greenwave_page(reference_image: Path | None) -> None:
                 "delay": "Late: 4.5 mins",
                 "request": "V2I Handshake Request Active",
                 "color": [255, 88, 109, late_alpha],
+                "color_hex": "#ff5870",
             }
         ]
     )
+    late_bus_icon = with_bus_icons(late_bus)
     signal = pd.DataFrame(
         [
             {
@@ -626,11 +639,20 @@ def v2i_greenwave_page(reference_image: Path | None) -> None:
             pickable=True,
         ),
         pdk.Layer(
+            "IconLayer",
+            records(late_bus_icon),
+            get_icon="icon",
+            get_position="[lon, lat]",
+            get_size="icon_size",
+            size_scale=7,
+            pickable=True,
+        ),
+        pdk.Layer(
             "ScatterplotLayer",
             records(late_bus),
             get_position="[lon, lat]",
             get_color="color",
-            get_radius=115,
+            get_radius=96,
             pickable=True,
         ),
         pdk.Layer(
@@ -674,10 +696,6 @@ def v2i_greenwave_page(reference_image: Path | None) -> None:
 def main() -> None:
     inject_theme()
 
-    workspace = Path(__file__).resolve().parent
-    image_dir = workspace / "img_dtc"
-    image_files = sorted(image_dir.glob("*.png"))
-
     st.sidebar.title("DTC Nav-Sync AI")
     page = st.sidebar.radio(
         "War Room Modules",
@@ -690,17 +708,16 @@ def main() -> None:
         index=0,
     )
 
-    reference_map = image_mapping_ui(image_files)
     st.sidebar.caption("Theme: Deep Dark Mode | Accent: #00E5FF")
 
     if page == "Unified Command":
-        unified_command_page(reference_map["Unified Command"])
+        unified_command_page()
     elif page == "Grid Balancing":
-        grid_balancing_page(reference_map["Grid Balancing"])
+        grid_balancing_page()
     elif page == "Unlinked Relay":
-        unlinked_relay_page(reference_map["Unlinked Relay"])
+        unlinked_relay_page()
     else:
-        v2i_greenwave_page(reference_map["V2I Greenwave"])
+        v2i_greenwave_page()
 
 
 if __name__ == "__main__":
